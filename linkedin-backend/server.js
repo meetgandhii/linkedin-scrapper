@@ -1,4 +1,3 @@
-// server.js (Backend)
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -12,12 +11,41 @@ app.use(express.json());
 
 const BRIGHT_DATA_API_KEY = process.env.BRIGHT_DATA_API_KEY;
 
-// Trigger data collection
-app.post('/api/linkedin/trigger', async (req, res) => {
+const pollForResults = async (snapshotId) => {
+  try {
+    const response = await axios.get(
+      `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}`,
+      {
+        params: {
+          format: 'json'
+        },
+        headers: {
+          'Authorization': `Bearer ${BRIGHT_DATA_API_KEY}`
+        }
+      }
+    );
+
+    if (response.data.status === 'running') {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      return pollForResults(snapshotId);
+    }
+
+    return response.data;
+  } catch (error) {
+    if (error.response?.data?.status === 'running') {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      return pollForResults(snapshotId);
+    }
+    throw error;
+  }
+};
+
+app.post('/api/linkedin/profile', async (req, res) => {
   try {
     const { profileUrl } = req.body;
     
-    const response = await axios.post(
+    // First trigger the data collection
+    const triggerResponse = await axios.post(
       'https://api.brightdata.com/datasets/v3/trigger',
       [{
         url: profileUrl
@@ -33,40 +61,19 @@ app.post('/api/linkedin/trigger', async (req, res) => {
         }
       }
     );
-    console.log(response.data);
+
+    const { snapshot_id } = triggerResponse.data;
     
-    res.json(response.data);
+    // Poll for results until ready
+    const profileData = await pollForResults(snapshot_id);
+    
+    res.json(profileData);
   } catch (error) {
     console.error('Error:', error.response?.data || error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Poll snapshot data
-app.get('/api/linkedin/snapshot/:snapshotId', async (req, res) => {
-  try {
-    const { snapshotId } = req.params;
-    
-    const response = await axios.get(
-      `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}`,
-      {
-        params: {
-          format: 'json'
-        },
-        headers: {
-          'Authorization': `Bearer ${BRIGHT_DATA_API_KEY}`
-        }
-      }
-    );
-    console.log(response.data);
-    
-    res.json(response.data);
-  } catch (error) {
-    if (error.response?.data?.status === 'running') {
-      res.status(202).json({ status: 'running', message: 'Snapshot is not ready yet' });
-    } else {
-      res.status(500).json({ error: error.message });
-    }
+    res.status(500).json({ 
+      error: 'Failed to fetch profile data',
+      details: error.response?.data || error.message 
+    });
   }
 });
 

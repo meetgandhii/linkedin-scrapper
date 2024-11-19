@@ -1,3 +1,4 @@
+// LinkedInScraper.jsx
 import React, { useState } from 'react';
 import axios from 'axios';
 import ProfileCard from './ProfileCard';
@@ -41,22 +42,6 @@ function LinkedInScraper() {
     reader.readAsText(file);
   };
 
-  const pollData = async (snapshotId) => {
-    try {
-      const response = await axios.get(
-        `${process.env.REACT_APP_BACKEND_API}/api/linkedin/snapshot/${snapshotId}`
-      );
-      
-      if (response.data.status === 'running') {
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        return pollData(snapshotId);
-      }
-      return response.data[0];
-    } catch (err) {
-      throw err;
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -68,17 +53,16 @@ function LinkedInScraper() {
     try {
       const profiles = await Promise.all(
         urlsToProcess.filter(url => url).map(async (url) => {
-          const triggerResponse = await axios.post(`${process.env.REACT_APP_BACKEND_API}/api/linkedin/trigger`, {
+          const response = await axios.post(`${process.env.REACT_APP_BACKEND_API}/api/linkedin/profile`, {
             profileUrl: url
           });
-          const { snapshot_id } = triggerResponse.data;
-          return await pollData(snapshot_id);
+          return response.data[0];
         })
       );
 
       setProfilesData(profiles);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.details || err.message);
     } finally {
       setLoading(false);
     }
@@ -105,7 +89,7 @@ function LinkedInScraper() {
       {loading && (
         <div className="flex items-center justify-center p-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-blue-600">Fetching profiles...</span>
+          <span className="ml-3 text-blue-600">Fetching profiles... This may take a few minutes</span>
         </div>
       )}
 
